@@ -5,6 +5,7 @@ from wordcloud import WordCloud, STOPWORDS
 import re
 from nltk.text import Text
 from collections import defaultdict
+import random
 
 st.set_page_config(page_title="Analisi Testi Tavolo Scuole Italiane", layout="wide")
 
@@ -16,26 +17,31 @@ def load_data():
 
 df_risposte, df_tfidf = load_data()
 
-st.title("📚 Analisi dei seguiti del tavolo di discussione della Prima Conferenza delle scuole italiane all'estero")
+st.title("📚 Analisi delle seguiti del tavolo di discussione della Prima Conferenza delle scuole italiane all'estero")
 
-# Sidebar con filtri leggibili
+# -- Sidebar con filtri avanzati --
 with st.sidebar:
     st.header("🔍 Filtri")
-    st.markdown("Filtra le risposte per Paese, Tipologia e Istituzione.")
 
-    paesi_disp = df_risposte["Paese"].dropna().unique()
-    sel_paesi = st.multiselect("🌍 Paesi", sorted(paesi_disp), default=sorted(paesi_disp), label_visibility="visible")
+    def multiselect_all(label, options, key):
+        all_key = f"{key}_all"
+        select_all = st.checkbox(f"Seleziona tutto per {label}", value=True, key=all_key)
+        selected = st.multiselect(label, options, default=options if select_all else [], key=key)
+        return selected
+
+    paesi_disp = sorted(df_risposte["Paese"].dropna().unique())
+    sel_paesi = multiselect_all("🌍 Paesi", paesi_disp, "paesi")
     df_f1 = df_risposte[df_risposte["Paese"].isin(sel_paesi)]
 
-    tipi_disp = df_f1["Tipologia istituzione"].dropna().unique()
-    sel_tipi = st.multiselect("🏫 Tipologia istituzione", sorted(tipi_disp), default=sorted(tipi_disp))
+    tipi_disp = sorted(df_f1["Tipologia istituzione"].dropna().unique())
+    sel_tipi = multiselect_all("🏫 Tipologia istituzione", tipi_disp, "tipi")
     df_f2 = df_f1[df_f1["Tipologia istituzione"].isin(sel_tipi)]
 
-    ist_disp = df_f2["Nome istituzione/rappresentanza"].dropna().unique()
-    sel_ist = st.multiselect("🏛️ Istituzione", sorted(ist_disp), default=sorted(ist_disp))
+    ist_disp = sorted(df_f2["Nome istituzione/rappresentanza"].dropna().unique())
+    sel_ist = multiselect_all("🏛️ Istituzione", ist_disp, "istituzioni")
     df_filtrato = df_f2[df_f2["Nome istituzione/rappresentanza"].isin(sel_ist)]
 
-# Domande leggibili
+# Mappatura domande
 col_map = {
     'Cosa significa «crescere in italiano»?': 'LEMMI_NORM_Cosa significa «crescere in italiano»?',
     "Come contribuiscono le scuole all’estero alla promozione culturale dell'Italia?": "LEMMI_NORM_Come contribuiscono le scuole all’estero alla promozione culturale dell'Italia?",
@@ -45,8 +51,19 @@ col_map = {
 domanda_sel_label = st.selectbox("❓ Seleziona una domanda", ["Tutte"] + list(col_map.keys()))
 col_sel = col_map.get(domanda_sel_label)
 
-# Word cloud e frequenze lemmi TF-IDF
-st.subheader("☁️ Nuvola di Parole (TF-IDF, senza stopwords)")
+# Categorie semantiche (esempio base)
+categorie = {
+    "italiano": "green", "lingua": "green", "italia": "green",
+    "musica": "red", "arte": "red", "letteratura": "red", "cultura": "red", "culturale": "red",
+    "scuola": "blue", "studente": "blue", "educativo": "blue", "formazione": "blue",
+    "famiglia": "orange", "comunità": "orange", "territorio": "orange"
+}
+
+def color_func(word, **kwargs):
+    return categorie.get(word, f"hsl({random.randint(0, 360)}, 60%, 40%)")
+
+# Wordcloud TF-IDF con colori per categoria
+st.subheader("☁️ Nuvola di Parole (TF-IDF, categorie colorate)")
 if domanda_sel_label != "Tutte":
     df_tfidf_filtrato = df_tfidf[df_tfidf["Domanda"] == col_sel]
 else:
@@ -57,7 +74,7 @@ df_tfidf_filtrato = df_tfidf_filtrato[~df_tfidf_filtrato["Lemma"].isin(stopwords
 tfidf_freq = df_tfidf_filtrato.groupby("Lemma")["TF-IDF"].sum().sort_values(ascending=False)
 
 if not tfidf_freq.empty:
-    wordcloud = WordCloud(width=1000, height=500, background_color='white').generate_from_frequencies(tfidf_freq)
+    wordcloud = WordCloud(width=1000, height=500, background_color='white', color_func=color_func)        .generate_from_frequencies(tfidf_freq)
     fig, ax = plt.subplots(figsize=(16, 8))
     ax.imshow(wordcloud, interpolation='bilinear')
     ax.axis("off")
@@ -65,14 +82,14 @@ if not tfidf_freq.empty:
 else:
     st.warning("Nessun dato disponibile per la word cloud.")
 
-# Frequenze TF-IDF
+# Frequenze
 st.subheader("📋 Frequenze (TF-IDF)")
 freq_df = tfidf_freq.reset_index()
 freq_df.columns = ["Parola", "TF-IDF"]
 st.dataframe(freq_df)
 
 # Concordanze
-st.subheader("🔎 Concordanze con evidenziazione")
+st.subheader("🔎 Concordanze (con molto contesto)")
 query = st.text_input("Cerca una parola nei testi originali:")
 
 if query:
@@ -80,13 +97,24 @@ if query:
     testo_completo = df_filtrato[colonne_testuali].astype(str).apply(lambda r: " ".join(r), axis=1).str.cat(sep=" ")
     tokens = re.findall(r'\b\w+\b', testo_completo.lower())
     text_obj = Text(tokens)
-    results = text_obj.concordance_list(query.lower(), width=120, lines=10)  # LARGHEZZA AUMENTATA
+    results = text_obj.concordance_list(query.lower(), width=180, lines=10)
 
     if results:
         for r in results:
-            # Evidenziazione in grassetto
             pattern = rf"\b{query.lower()}\b"
             line = re.sub(pattern, f"**{query.lower()}**", r.line)
             st.markdown(f"... {line} ...")
     else:
         st.warning("Nessuna occorrenza trovata.")
+
+# Selettore testo originale
+st.subheader("📝 Visualizza risposte originali")
+col_testuali = [col for col in df_risposte.columns if col.startswith(("Cosa ", "Come ", "Quali "))]
+for i, row in df_filtrato.iterrows():
+    nome = row.get("Nome", "")
+    cognome = row.get("Cognome", "")
+    istituzione = row.get("Nome istituzione/rappresentanza", "")
+    with st.expander(f"{nome} {cognome} – {istituzione}"):
+        for domanda in col_testuali:
+            st.markdown(f"**{domanda}**")
+            st.markdown(row[domanda])
