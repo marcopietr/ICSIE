@@ -6,7 +6,7 @@ import re
 from nltk.text import Text
 from collections import defaultdict
 
-st.set_page_config(page_title="Analisi Testi Italiani", layout="wide")
+st.set_page_config(page_title="Analisi Testi Tavolo Scuole Italiane", layout="wide")
 
 @st.cache_data
 def load_data():
@@ -16,7 +16,7 @@ def load_data():
 
 df_risposte, df_tfidf = load_data()
 
-st.title("📊 Analisi delle Risposte: Italiano nel Mondo")
+st.title("📚 Analisi delle seguiti del tavolo di discussione della Prima Conferenza delle scuole italiane all'estero")
 
 # Sidebar con filtri leggibili
 with st.sidebar:
@@ -80,11 +80,13 @@ if query:
     testo_completo = df_filtrato[colonne_testuali].astype(str).apply(lambda r: " ".join(r), axis=1).str.cat(sep=" ")
     tokens = re.findall(r'\b\w+\b', testo_completo.lower())
     text_obj = Text(tokens)
-    results = text_obj.concordance_list(query.lower(), width=70, lines=10)
+    results = text_obj.concordance_list(query.lower(), width=120, lines=10)  # LARGHEZZA AUMENTATA
 
     if results:
         for r in results:
-            line = r.line.replace(query.lower(), f"**{query.lower()}**")
+            # Evidenziazione in grassetto
+            pattern = rf"\b{query.lower()}\b"
+            line = re.sub(pattern, f"**{query.lower()}**", r.line)
             st.markdown(f"... {line} ...")
     else:
         st.warning("Nessuna occorrenza trovata.")
