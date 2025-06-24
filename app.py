@@ -16,7 +16,7 @@ def load_data():
 
 df_risposte, df_tfidf = load_data()
 
-st.title("📚 Analisi delle seguiti del tavolo di discussione della Prima Conferenza delle scuole italiane all'estero")
+st.title("📚 Analisi dei seguiti del tavolo di discussione della Prima Conferenza delle scuole italiane all'estero")
 
 # Sidebar con filtri leggibili
 with st.sidebar:
@@ -45,7 +45,7 @@ col_map = {
 domanda_sel_label = st.selectbox("❓ Seleziona una domanda", ["Tutte"] + list(col_map.keys()))
 col_sel = col_map.get(domanda_sel_label)
 
-# Word cloud e frequenze da TF-IDF
+# Word cloud e frequenze lemmi TF-IDF
 st.subheader("☁️ Nuvola di Parole (TF-IDF, senza stopwords)")
 if domanda_sel_label != "Tutte":
     df_tfidf_filtrato = df_tfidf[df_tfidf["Domanda"] == col_sel]
