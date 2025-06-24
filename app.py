@@ -19,26 +19,30 @@ df_risposte, df_tfidf = load_data()
 
 st.title("📚 Analisi delle seguiti del tavolo di discussione della Prima Conferenza delle scuole italiane all'estero")
 
-# -- Sidebar con filtri avanzati --
+# Sidebar con filtri integrati
 with st.sidebar:
     st.header("🔍 Filtri")
 
-    def multiselect_all(label, options, key):
-        all_key = f"{key}_all"
-        select_all = st.checkbox(f"Seleziona tutto per {label}", value=True, key=all_key)
-        selected = st.multiselect(label, options, default=options if select_all else [], key=key)
-        return selected
+    def multiselect_with_all(label, options, key):
+        all_label = f"Tutti i {label.lower()}"
+        options_with_all = [all_label] + options
+        default = [all_label]
+        selection = st.multiselect(label, options_with_all, default=default, key=key)
+        if all_label in selection or len(selection) == 0:
+            return options
+        else:
+            return selection
 
     paesi_disp = sorted(df_risposte["Paese"].dropna().unique())
-    sel_paesi = multiselect_all("🌍 Paesi", paesi_disp, "paesi")
+    sel_paesi = multiselect_with_all("Paesi", paesi_disp, "paesi")
     df_f1 = df_risposte[df_risposte["Paese"].isin(sel_paesi)]
 
     tipi_disp = sorted(df_f1["Tipologia istituzione"].dropna().unique())
-    sel_tipi = multiselect_all("🏫 Tipologia istituzione", tipi_disp, "tipi")
+    sel_tipi = multiselect_with_all("Tipologie istituzione", tipi_disp, "tipi")
     df_f2 = df_f1[df_f1["Tipologia istituzione"].isin(sel_tipi)]
 
     ist_disp = sorted(df_f2["Nome istituzione/rappresentanza"].dropna().unique())
-    sel_ist = multiselect_all("🏛️ Istituzione", ist_disp, "istituzioni")
+    sel_ist = multiselect_with_all("Istituzioni", ist_disp, "istituzioni")
     df_filtrato = df_f2[df_f2["Nome istituzione/rappresentanza"].isin(sel_ist)]
 
 # Mappatura domande
@@ -51,7 +55,7 @@ col_map = {
 domanda_sel_label = st.selectbox("❓ Seleziona una domanda", ["Tutte"] + list(col_map.keys()))
 col_sel = col_map.get(domanda_sel_label)
 
-# Categorie semantiche (esempio base)
+# Categorie semantiche
 categorie = {
     "italiano": "green", "lingua": "green", "italia": "green",
     "musica": "red", "arte": "red", "letteratura": "red", "cultura": "red", "culturale": "red",
@@ -62,7 +66,7 @@ categorie = {
 def color_func(word, **kwargs):
     return categorie.get(word, f"hsl({random.randint(0, 360)}, 60%, 40%)")
 
-# Wordcloud TF-IDF con colori per categoria
+# Wordcloud
 st.subheader("☁️ Nuvola di Parole (TF-IDF, categorie colorate)")
 if domanda_sel_label != "Tutte":
     df_tfidf_filtrato = df_tfidf[df_tfidf["Domanda"] == col_sel]
@@ -89,7 +93,7 @@ freq_df.columns = ["Parola", "TF-IDF"]
 st.dataframe(freq_df)
 
 # Concordanze
-st.subheader("🔎 Concordanze (con molto contesto)")
+st.subheader("🔎 Concordanze con evidenziazione (testo esteso)")
 query = st.text_input("Cerca una parola nei testi originali:")
 
 if query:
@@ -97,7 +101,7 @@ if query:
     testo_completo = df_filtrato[colonne_testuali].astype(str).apply(lambda r: " ".join(r), axis=1).str.cat(sep=" ")
     tokens = re.findall(r'\b\w+\b', testo_completo.lower())
     text_obj = Text(tokens)
-    results = text_obj.concordance_list(query.lower(), width=180, lines=10)
+    results = text_obj.concordance_list(query.lower(), width=240, lines=10)
 
     if results:
         for r in results:
@@ -107,14 +111,17 @@ if query:
     else:
         st.warning("Nessuna occorrenza trovata.")
 
-# Selettore testo originale
-st.subheader("📝 Visualizza risposte originali")
+# Testi originali ordinati per Paese
+st.subheader("📝 Visualizza risposte originali per Paese")
 col_testuali = [col for col in df_risposte.columns if col.startswith(("Cosa ", "Come ", "Quali "))]
-for i, row in df_filtrato.iterrows():
+df_filtrato_sorted = df_filtrato.sort_values(by=["Paese", "Cognome", "Nome"])
+
+for i, row in df_filtrato_sorted.iterrows():
     nome = row.get("Nome", "")
     cognome = row.get("Cognome", "")
+    paese = row.get("Paese", "")
     istituzione = row.get("Nome istituzione/rappresentanza", "")
-    with st.expander(f"{nome} {cognome} – {istituzione}"):
+    with st.expander(f"🇮🇹 {paese} – {nome} {cognome} ({istituzione})"):
         for domanda in col_testuali:
             st.markdown(f"**{domanda}**")
             st.markdown(row[domanda])
