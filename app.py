@@ -2,10 +2,9 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 from wordcloud import WordCloud
-import nltk
+import re
 from nltk.text import Text
-
-nltk.download('punkt')
+from collections import Counter
 
 st.set_page_config(page_title="Analisi Testi Italiani", layout="wide")
 
@@ -37,14 +36,21 @@ ist_disp = df_f2["Nome istituzione/rappresentanza"].dropna().unique()
 sel_ist = st.sidebar.multiselect("Istituzione", sorted(ist_disp), default=sorted(ist_disp))
 df_filtrato = df_f2[df_f2["Nome istituzione/rappresentanza"].isin(sel_ist)]
 
-# --- Selezione domanda ---
-domande = [col for col in df_risposte.columns if col.startswith("LEMMI_NORM")]
-domanda_sel = st.selectbox("❓ Seleziona una domanda per l'analisi", ["Tutte"] + domande)
+# --- Mappa domande e colonne LEMMI_NORM ---
+col_map = {
+    'Cosa significa «crescere in italiano»?': 'LEMMI_NORM_Cosa significa «crescere in italiano»?',
+    "Come contribuiscono le scuole all’estero alla promozione culturale dell'Italia?": "LEMMI_NORM_Come contribuiscono le scuole all’estero alla promozione culturale dell'Italia?",
+    'Quali sono i fattori di attrattività nelle rispettive aree geografiche?': 'LEMMI_NORM_Quali sono i fattori di attrattività nelle rispettive aree geografiche?',
+    'Come possono contribuire le scuole all’estero a una comunità globale dell’italofonia?': 'LEMMI_NORM_Come possono contribuire le scuole all’estero a una comunità globale dell’italofonia?'
+}
+
+domanda_sel_label = st.selectbox("❓ Seleziona una domanda per l'analisi", ["Tutte"] + list(col_map.keys()))
+col_sel = col_map.get(domanda_sel_label)
 
 # --- Word Cloud TF-IDF ---
 st.subheader("☁️ Nuvola di Parole (TF-IDF)")
-if domanda_sel != "Tutte":
-    df_tfidf_filtrato = df_tfidf[df_tfidf["Domanda"] == domanda_sel]
+if domanda_sel_label != "Tutte":
+    df_tfidf_filtrato = df_tfidf[df_tfidf["Domanda"] == col_sel]
 else:
     df_tfidf_filtrato = df_tfidf.copy()
 
@@ -58,28 +64,31 @@ if not tfidf_freq.empty:
 else:
     st.warning("Nessun dato disponibile per la word cloud.")
 
-# --- Frequenze parole ---
-st.subheader("📋 Frequenze parole")
-if domanda_sel != "Tutte" and domanda_sel in df_filtrato.columns:
-    lemmi = df_filtrato[domanda_sel].dropna().explode()
-else:
-    lemmi_cols = [col for col in df_filtrato.columns if col.startswith("LEMMI_NORM")]
-    lemmi = pd.Series([lemma for sublist in df_filtrato[lemmi_cols].dropna(how='all').values.flatten() if isinstance(sublist, list) for lemma in sublist])
+# --- Frequenze parole (da testo completo) ---
+st.subheader("📋 Frequenze parole (testo originale tokenizzato)")
+colonne_testuali = [col for col in df_risposte.columns if not col.startswith("LEMMI_") and col.startswith(("Cosa ", "Come ", "Quali "))]
 
-frequenze = lemmi.value_counts().head(50)
-if not frequenze.empty:
-    st.dataframe(frequenze.rename_axis("Lemma").reset_index(name="Frequenza"))
+if domanda_sel_label != "Tutte":
+    testi = df_filtrato[domanda_sel_label].dropna().astype(str).tolist()
 else:
-    st.info("Nessuna frequenza disponibile con i filtri attuali.")
+    testi = df_filtrato[colonne_testuali].astype(str).apply(lambda r: " ".join(r), axis=1).tolist()
+
+tokens = re.findall(r'\b\w+\b', " ".join(testi).lower())
+frequenze_parole = Counter(tokens).most_common(50)
+
+if frequenze_parole:
+    st.dataframe(pd.DataFrame(frequenze_parole, columns=["Parola", "Frequenza"]))
+else:
+    st.info("Nessuna parola trovata.")
 
 # --- Concordanze ---
 st.subheader("🔎 Concordanze")
 parola = st.text_input("Scrivi una parola da cercare nei testi:")
+
 if parola:
-    domande_testuali = [col for col in df_risposte.columns if col.startswith("Cosa significa") or col.startswith("Come ") or col.startswith("Quali ")]
-    testo_completo = df_filtrato[domande_testuali].astype(str).apply(lambda row: " ".join(row), axis=1).str.cat(sep=" ")
-    tokens = nltk.word_tokenize(testo_completo.lower())
-    concordanza = Text(tokens).concordance_list(parola.lower(), width=70, lines=10)
+    corpus = " ".join(testi).lower()
+    tokens_all = re.findall(r'\b\w+\b', corpus)
+    concordanza = Text(tokens_all).concordance_list(parola.lower(), width=70, lines=10)
 
     if concordanza:
         for c in concordanza:
