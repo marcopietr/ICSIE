@@ -9,8 +9,7 @@ st.set_page_config(page_title="Analisi Testi Tavolo Scuole Italiane", layout="wi
 @st.cache_data
 def load_data():
     df_risp = pd.read_excel("analisi_risposte_con_tfidf.xlsx", sheet_name="Risposte + NLP")
-    df_tfidf = pd.read_excel("analisi_risposte_con_tfidf.xlsx", sheet_name="TFIDF_top50")
-    return df_risp, df_tfidf
+    return df_risp
 
 df_risposte, df_tfidf = load_data()
 
