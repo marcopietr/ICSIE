@@ -11,7 +11,7 @@ def load_data():
     df_risp = pd.read_excel("analisi_risposte_con_tfidf.xlsx", sheet_name="Risposte + NLP")
     return df_risp
 
-df_risposte, df_tfidf = load_data()
+df_risposte = load_data()
 
 st.title("📚 Analisi delle seguiti del tavolo di discussione della Prima Conferenza delle scuole italiane all'estero")
 
