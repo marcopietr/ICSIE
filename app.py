@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from wordcloud import WordCloud, STOPWORDS
 import re
 from nltk.text import Text
-from collections import defaultdict
+from collections import Counter
 import random
 
 st.set_page_config(page_title="Analisi Testi Tavolo Scuole Italiane", layout="wide")
@@ -12,10 +12,9 @@ st.set_page_config(page_title="Analisi Testi Tavolo Scuole Italiane", layout="wi
 @st.cache_data
 def load_data():
     df_risp = pd.read_excel("analisi_risposte_con_tfidf.xlsx", sheet_name="Risposte + NLP")
-    df_tfidf = pd.read_excel("analisi_risposte_con_tfidf.xlsx", sheet_name="TFIDF_top50")
-    return df_risp, df_tfidf
+    return df_risp
 
-df_risposte, df_tfidf = load_data()
+df_risposte = load_data()
 
 st.title("📚 Analisi delle seguiti del tavolo di discussione della Prima Conferenza delle scuole italiane all'estero")
 
@@ -45,7 +44,7 @@ with st.sidebar:
     sel_ist = multiselect_with_all("Istituzioni", ist_disp, "istituzioni")
     df_filtrato = df_f2[df_f2["Nome istituzione/rappresentanza"].isin(sel_ist)]
 
-# Mappatura domande
+# Domande mappate
 col_map = {
     'Cosa significa «crescere in italiano»?': 'LEMMI_NORM_Cosa significa «crescere in italiano»?',
     "Come contribuiscono le scuole all’estero alla promozione culturale dell'Italia?": "LEMMI_NORM_Come contribuiscono le scuole all’estero alla promozione culturale dell'Italia?",
@@ -55,30 +54,31 @@ col_map = {
 domanda_sel_label = st.selectbox("❓ Seleziona una domanda", ["Tutte"] + list(col_map.keys()))
 col_sel = col_map.get(domanda_sel_label)
 
-# Categorie semantiche
+# Categoria colori
 categorie = {
     "italiano": "green", "lingua": "green", "italia": "green",
     "musica": "red", "arte": "red", "letteratura": "red", "cultura": "red", "culturale": "red",
     "scuola": "blue", "studente": "blue", "educativo": "blue", "formazione": "blue",
     "famiglia": "orange", "comunità": "orange", "territorio": "orange"
 }
-
 def color_func(word, **kwargs):
     return categorie.get(word, f"hsl({random.randint(0, 360)}, 60%, 40%)")
 
-# Wordcloud
-st.subheader("☁️ Nuvola di Parole (TF-IDF, categorie colorate)")
-if domanda_sel_label != "Tutte":
-    df_tfidf_filtrato = df_tfidf[df_tfidf["Domanda"] == col_sel]
+# TF-IDF locale (basato solo sui testi filtrati)
+st.subheader("☁️ Nuvola di Parole (TF-IDF simulato su testi filtrati)")
+
+if domanda_sel_label != "Tutte" and col_sel in df_filtrato.columns:
+    lemmi = df_filtrato[col_sel].dropna().explode()
 else:
-    df_tfidf_filtrato = df_tfidf.copy()
+    lemmi_cols = [col for col in df_filtrato.columns if col.startswith("LEMMI_NORM")]
+    lemmi = pd.Series([lemma for sublist in df_filtrato[lemmi_cols].dropna(how='all').values.flatten() if isinstance(sublist, list) for lemma in sublist])
 
 stopwords = set(STOPWORDS)
-df_tfidf_filtrato = df_tfidf_filtrato[~df_tfidf_filtrato["Lemma"].isin(stopwords)]
-tfidf_freq = df_tfidf_filtrato.groupby("Lemma")["TF-IDF"].sum().sort_values(ascending=False)
+lemmi = lemmi[~lemmi.isin(stopwords)]
+tfidf_freq = lemmi.value_counts().head(100)
 
 if not tfidf_freq.empty:
-    wordcloud = WordCloud(width=1000, height=500, background_color='white', color_func=color_func)        .generate_from_frequencies(tfidf_freq)
+    wordcloud = WordCloud(width=1000, height=500, background_color='white', color_func=color_func)        .generate_from_frequencies(tfidf_freq.to_dict())
     fig, ax = plt.subplots(figsize=(16, 8))
     ax.imshow(wordcloud, interpolation='bilinear')
     ax.axis("off")
@@ -86,42 +86,11 @@ if not tfidf_freq.empty:
 else:
     st.warning("Nessun dato disponibile per la word cloud.")
 
-# Frequenze
-st.subheader("📋 Frequenze (TF-IDF)")
-freq_df = tfidf_freq.reset_index()
-freq_df.columns = ["Parola", "TF-IDF"]
-st.dataframe(freq_df)
-
-# Concordanze
-st.subheader("🔎 Concordanze con evidenziazione (testo esteso)")
-query = st.text_input("Cerca una parola nei testi originali:")
-
-if query:
-    colonne_testuali = [col for col in df_risposte.columns if not col.startswith("LEMMI_") and col.startswith(("Cosa ", "Come ", "Quali "))]
-    testo_completo = df_filtrato[colonne_testuali].astype(str).apply(lambda r: " ".join(r), axis=1).str.cat(sep=" ")
-    tokens = re.findall(r'\b\w+\b', testo_completo.lower())
-    text_obj = Text(tokens)
-    results = text_obj.concordance_list(query.lower(), width=240, lines=10)
-
-    if results:
-        for r in results:
-            pattern = rf"\b{query.lower()}\b"
-            line = re.sub(pattern, f"**{query.lower()}**", r.line)
-            st.markdown(f"... {line} ...")
-    else:
-        st.warning("Nessuna occorrenza trovata.")
-
-# Testi originali ordinati per Paese
-st.subheader("📝 Visualizza risposte originali per Paese")
-col_testuali = [col for col in df_risposte.columns if col.startswith(("Cosa ", "Come ", "Quali "))]
-df_filtrato_sorted = df_filtrato.sort_values(by=["Paese", "Cognome", "Nome"])
-
-for i, row in df_filtrato_sorted.iterrows():
-    nome = row.get("Nome", "")
-    cognome = row.get("Cognome", "")
-    paese = row.get("Paese", "")
-    istituzione = row.get("Nome istituzione/rappresentanza", "")
-    with st.expander(f"🇮🇹 {paese} – {nome} {cognome} ({istituzione})"):
-        for domanda in col_testuali:
-            st.markdown(f"**{domanda}**")
-            st.markdown(row[domanda])
+# Frequenze parole
+st.subheader("📋 Frequenze basate sui testi selezionati")
+if not tfidf_freq.empty:
+    freq_df = tfidf_freq.reset_index()
+    freq_df.columns = ["Parola", "Frequenza"]
+    st.dataframe(freq_df)
+else:
+    st.info("Nessuna frequenza disponibile con i filtri attuali.")
